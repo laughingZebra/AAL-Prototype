@@ -1,0 +1,336 @@
+# OpenRemote v3
+#
+# This is the base configuration profile. Note that you must extend this configuration to complete
+# it with service dependencies and volume mappings, see docker-compose.yml for a usable complete
+#  configuration.
+#
+# This file contains a description of all the environment variables available for each service
+# including their default values. These can be overridden in many ways, shell environment variable,
+# env file, extending/merging this compose file, etc.
+#
+# Here's a list of commonly customised environment variables:
+#
+# SETUP_ADMIN_PASSWORD
+# DOMAINNAME
+# EXTERNAL_URL
+# ADMIN_EMAIL
+# SETUP_EMAIL_HOST
+# SETUP_EMAIL_USER
+# SETUP_EMAIL_PASSWORD
+# SETUP_EMAIL_FROM_KEYCLOAK
+# SETUP_EMAIL_FROM_DEFAULT
+# NOTIFICATION_FIREBASE_API_KEY
+# IDENTITY_PROVIDER
+#
+version: '2.4'
+
+volumes:
+  postgresql-data: # Needed if you want to persist postgres data outside of container
+  temp-data: # Needed to share temp export data between postgres and manager containers
+
+services:
+
+  # Reverse proxy which uses self signed certificate when DOMAINNAME=localhost. You can
+  # map a Docker volume or host directory to access/store proxy configuration files
+  # and SSL certificates.
+  proxy:
+    image: openremote/proxy:${PROXY_VERSION:-2.1.2.4}
+    restart: always
+    # Override the haproxy.cfg with custom file
+    #volumes:
+    #  -${MY_PROXY_CONFIG_FILE}:/etc/haproxy/haproxy.cfg
+    environment:
+
+      # It is important that all services have the same timezone and are time synchronized.
+      # Bearer tokens are only valid for minutes, and authentication fails if Keycloak drifts.
+      TZ: ${TZ:-Europe/Amsterdam}
+
+      # File to which std out will be logged
+      LOGFILE: ${PROXY_LOGFILE:-/var/log/proxy.log}
+
+      # Customize proxy log, defaults to 'notice', requests are logged at 'info'.
+      # Available levels are: emerg, alert, crit, err, warning, notice, info, debug
+      PROXY_LOGLEVEL: ${PROXY_LOGLEVEL:-notice}
+
+      # The public host name of this OpenRemote installation. Set this to request/manage an SSL
+      # certificate with the free https://letsencrypt.org/ provider. The default 'localhost' will
+      # rely on a baked-in self-signed certificate.
+      DOMAINNAME: ${DOMAINNAME:-localhost}
+
+      # Provide your own email address for your SSL certificates with Let's Encrypt.
+      LE_EMAIL: ${ADMIN_EMAIL:-}
+
+      # Enable --staging will manage fake certificates, so avoid hitting the rate limits of Let's Encrypt
+      # when testing (this is important, you are limited to 5 duplicate certificates per week!)
+      # e.g. '--staging --logs-dir=/etc/letsencrypt'
+      LE_EXTRA_ARGS: ${PROXY_EXTRA_ARGS:-}
+
+      # The proxy supports up to 10 custom redirects from hostname to any path on the
+      # manager service.
+      # e.g. PROXY_HOST_REDIRECT_1_NAME: www.my-console-master.tld
+      #      PROXY_HOST_REDIRECT_1_TARGET: /console/master
+      PROXY_HOST_REDIRECT_1_NAME:
+      PROXY_HOST_REDIRECT_1_TARGET:
+      PROXY_HOST_REDIRECT_2_NAME:
+      PROXY_HOST_REDIRECT_2_TARGET:
+      PROXY_HOST_REDIRECT_3_NAME:
+      PROXY_HOST_REDIRECT_3_TARGET:
+      PROXY_HOST_REDIRECT_4_NAME:
+      PROXY_HOST_REDIRECT_4_TARGET:
+      PROXY_HOST_REDIRECT_5_NAME:
+      PROXY_HOST_REDIRECT_5_TARGET:
+      PROXY_HOST_REDIRECT_6_NAME:
+      PROXY_HOST_REDIRECT_6_TARGET:
+      PROXY_HOST_REDIRECT_7_NAME:
+      PROXY_HOST_REDIRECT_7_TARGET:
+      PROXY_HOST_REDIRECT_8_NAME:
+      PROXY_HOST_REDIRECT_8_TARGET:
+      PROXY_HOST_REDIRECT_9_NAME:
+      PROXY_HOST_REDIRECT_9_TARGET:
+      PROXY_HOST_REDIRECT_10_NAME:
+      PROXY_HOST_REDIRECT_10_TARGET:
+
+    # Expose public services (web server, MQTT broker)
+    ports:
+      - "80:80" # HTTP for letsencrypt cert generation and in general it redirects to 443 for HTTPS
+      - "443:443" # HTTPS /auth directs to keycloak and other paths direct to manager
+      - "8883:8883" # MQTTS
+
+  # The OpenRemote Manager
+  manager:
+    image: openremote/manager:${MANAGER_VERSION:-latest}
+    restart: always
+    # Map any custom content into the /deployment dir:
+    #   /deployment/manager/app - contains custom web content
+    #   /deployment/manager/extensions - contains JARS to be loaded on the classpath
+    #   /deployment/manager/provisioning - contains JSON files for provisioning the system
+    #   /deployment/map/mapdata.mbtiles - map tile data
+    #   /deployment/map/mapsettings.json - map styling
+    volumes:
+      - temp-data:/tmp
+    #  - deployment-data:/deployment
+    #  - postgresql-data:/postgres
+    # Expose any devices required by agents
+    #devices:
+    #  - /dev/ttyACM0
+    #ports:
+    #  - "8000:8000" # Remote debugging port - NOT FOR PRODUCTION USE!!!
+    #  - "8080:8080" # Web server port
+    logging:
+      options:
+        # Use very little logging for container STDOUT, this is
+        # quick to view and download with Docker remote client
+        # and `docker logs -f`. If you want to tail the whole
+        # and larger, rotated file log, use instead:
+        #
+        # docker exec -it openremote_manager_1 tail -f /deployment/openremote.log.0
+        #
+        max-size: "1m"
+    environment:
+
+      # It is important that all services have the same timezone and are time synchronized.
+      # Bearer tokens are only valid for minutes, and authentication fails if Keycloak drifts
+      TZ: ${TZ:-Europe/Amsterdam}
+
+      # The password for the super user (admin) of the master realm (must match keycloak password if using
+      # the keycloak identity provider).
+      SETUP_ADMIN_PASSWORD: ${SETUP_ADMIN_PASSWORD:-secret}
+
+      # The public URL of the proxy in front of this manager; must match the proxy#DOMAINNAME (unfortunately
+      # docker compose doesn't support chaining environment variables at time of writing, hence the need for
+      # two environment variables)
+      EXTERNAL_URL: ${EXTERNAL_URL:-https://localhost}
+
+      # Configure SMTP server, to send password reset emails etc.
+      SETUP_EMAIL_HOST:
+      SETUP_EMAIL_USER:
+      SETUP_EMAIL_PASSWORD:
+      SETUP_EMAIL_PORT: ${SETUP_EMAIL_PORT:-25}
+      SETUP_EMAIL_TLS: ${SETUP_EMAIL_TLS:-true}
+      SETUP_EMAIL_FROM_KEYCLOAK: ${SETUP_EMAIL_FROM_KEYCLOAK:-no-reply@localhost}
+      SETUP_EMAIL_FROM_DEFAULT: ${SETUP_EMAIL_FROM_DEFAULT:-no-reply@localhost}
+
+      # Console applications can register for push notifications through FCM.
+      NOTIFICATION_FIREBASE_URL: ${NOTIFICATION_FIREBASE_URL:-https://fcm.googleapis.com/fcm/send}
+      NOTIFICATION_FIREBASE_API_KEY:
+      FIREBASE_CONFIG_FILE: ${FIREBASE_CONFIG_FILE:-/deployment/manager/fcm.json}
+
+      # Developer mode (see code for usages of DEV_MODE flag)
+      DEV_MODE: ${DEV_MODE:-false}
+
+      # !! WARNING: This will wipe your database !!
+      # Force a full clean and setup on startup irrespective of whether there is existing data
+      # Default behaviour is false unless DEV_MODE = true or openremote database doesn't already exist
+      SETUP_WIPE_CLEAN_INSTALL: ${SETUP_WIPE_CLEAN_INSTALL:-false}
+
+      # Manager web server interface binding; default:
+      WEBSERVER_LISTEN_HOST: ${WEBSERVER_LISTEN_HOST:-0.0.0.0}
+
+      # Database settings
+      DB_VENDOR: ${DB_VENDOR:-postgres}
+      DB_HOST: ${DB_HOST:-postgresql}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-openremote}
+      DB_SCHEMA: ${DB_SCHEMA:-openremote}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_MIN_POOL_SIZE: ${DB_MIN_POOL_SIZE:-5}
+      DB_MAX_POOL_SIZE: ${DB_MAX_POOL_SIZE:-20}
+      DB_CONNECTION_TIMEOUT_SECONDS: ${DB_CONNECTION_TIMEOUT_SECONDS:-300}
+
+      # The service-internal host name and port of the keycloak identity provider; defaults:
+      KEYCLOAK_HOST: ${KEYCLOAK_HOST:-keycloak}
+      KEYCLOAK_PORT: ${KEYCLOAK_PORT:-8080}
+
+      # Location of built in web content.
+      APP_DOCROOT: ${APP_DOCROOT:-/opt/web}
+
+      # Location of the custom web content.
+      CUSTOM_APP_DOCROOT: ${CUSTOM_APP_DOCROOT:-/deployment/manager/app}
+
+      # Location for the provisioning files
+      PROVISIONING_DOCROOT: ${PROVISIONING_DOCROOT:-/deployment/manager/provisioning}
+
+      # Redirect path when root URI is requested
+      ROOT_REDIRECT_PATH: ${ROOT_REDIRECT_PATH:-/manager}
+
+      # Map related settings.
+      # Provide a path to the map tiles database file (see https://openmaptiles.com/).
+      MAP_TILES_PATH: ${MAP_TILES_PATH:-/deployment/map/mapdata.mbtiles}
+
+      # Override the map settings such as center location and zoom when opening the
+      # manager's map, as well as other style details and colours.
+      MAP_SETTINGS_PATH: ${MAP_SETTINGS_PATH:-/deployment/map/mapsettings.json}
+
+      # Set the tileserver host name and port; the manager will reverse proxy to this server
+      # to provide raster map tiles to frontend apps
+      MAP_TILESERVER_HOST: localhost
+      MAP_TILESERVER_PORT: ${MAP_TILESERVER_PORT:-8082}
+      MAP_TILESERVER_REQUEST_TIMEOUT: ${MAP_TILESERVER_REQUEST_TIMEOUT:-10000}
+
+      # Override logging.properties with a file of your choice; if not set then defaults
+      # to embedded logging.properties or logging-dev.properties (if DEV_MODE=true)
+      LOGGING_CONFIG_FILE:
+
+      # The number of threads and therefore background tasks that can be executed at the same
+      # time. Used by scheduled, usually short-lived and non-blocking tasks, such as protocols
+      # polling a remote service at regular interval, or the internal checks for expired client
+      # subscriptions on the event bus (default depends on detected CPU cores). Also used by
+      # the rules engine.
+      SCHEDULED_TASKS_THREADS_MAX: ${SCHEDULED_TASKS_THREADS_MAX:-4}
+
+      # When asset attributes are enabled for rule events, each value update will be a temporary
+      # fact in rules. You can set the global default expiration time span used when no other
+      # attribute-level configuration exists. Default is 1 hour.
+      RULE_EVENT_EXPIRES: ${RULE_EVENT_EXPIRES:-1h}
+
+      # The identity provider implementation to use for managing user identities, roles, and
+      # access authorization. The default is 'keycloak' which requires a separate service but
+      # provides full multi-tenancy identity, role permissions, and user session timeouts.
+      # The 'basic' provider supports only superusers and their text passwords, managed in a
+      # simple database table, and always requires a new login when a page is reloaded.
+      IDENTITY_PROVIDER: ${IDENTITY_PROVIDER:-keycloak}
+
+      # For the Keycloak identity provider, you may configure session timeouts of frontend apps. This
+      # will only be applied on newly created realms, or once on the master realm when clean setup runs.
+
+      # Validity of non-offline refresh tokens, force login when expired on web app, default is 1 day.
+      IDENTITY_SESSION_MAX_MINUTES: ${IDENTITY_SESSION_MAX_MINUTES:-1440}
+
+      # Validity of offline refresh tokens, force login on native console app, default is 5 years.
+      # Note that production offline tokens should be valid for months or years: When the offline token
+      # expires, the native console app can no longer contact the service in the background (e.g. when
+      # processing push notifications) and will therefore fail silently until the user logs in again.
+      IDENTITY_SESSION_OFFLINE_TIMEOUT_MINUTES: ${IDENTITY_SESSION_OFFLINE_TIMEOUT_MINUTES:-2628000}
+
+      # Configure the default max age for data points stored in the database (individual attributes can use a custom
+      # value by using the DATA_POINTS_MAX_AGE_DAYS AssetMeta item).
+      # DATA_POINTS_MAX_AGE_DAYS = 30
+
+      # App id for the API of OpenWeather: https://openweathermap.org
+      # OPEN_WEATHER_API_APP_ID
+
+      # API key for the API of ForecastSolar: https://forecast.solar
+      # FORECAST_SOLAR_API_KEY
+
+      # Custom JVM options (increase heap size if required)
+      MANAGER_JAVA_OPTS: ${MANAGER_JAVA_OPTS:--Xms400m -Xmx400m
+       -XX:CompressedClassSpaceSize=25m -XX:MaxMetaspaceSize=150m
+       -XX:InitialCodeCacheSize=50m -XX:ReservedCodeCacheSize=50m
+       -XX:MaxDirectMemorySize=25m -XX:NativeMemoryTracking=summary
+       -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/javadump.core.hprof}
+
+      # Custom JVM tool options (for remote debugging)
+      #JAVA_TOOL_OPTIONS: '-agentlib:jdwp=transport=dt_socket,address=8000,server=y,suspend=n'
+
+  # Keycloak identity provider
+  keycloak:
+    image: openremote/keycloak:${KEYCLOAK_VERSION:-13.0.1.3}
+    restart: always
+    # Map any custom themes into the /deployment/keycloak/themes dir:
+    #volumes:
+      # Map custom themes
+      # - ../deployment:/deployment
+      # - deployment-data:/deployment
+    #ports:
+    #  - "8081:8080" # Web server port
+    environment:
+
+      # It is important that all services have the same timezone and are time synchronized.
+      # Bearer tokens are only valid for minutes, and authentication fails if Keycloak drifts
+      TZ: ${TZ:-Europe/Amsterdam}
+
+      # Switch to DEBUG to diagnose Keycloak problems; default:
+      KEYCLOAK_LOGLEVEL: ${KEYCLOAK_LOGLEVEL:-INFO}
+
+      # Configure how Keycloak connects to the database
+      DB_VENDOR: ${DB_VENDOR:-postgres}
+      DB_ADDR: ${DB_HOST:-postgresql}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_NAME:-openremote}
+      DB_USER: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      KEYCLOAK_USER: ${KEYCLOAK_USER:-admin}
+      KEYCLOAK_PASSWORD: ${SETUP_ADMIN_PASSWORD:-secret}
+      PROXY_ADDRESS_FORWARDING: ${PROXY_ADDRESS_FORWARDING:-true}
+      KEYCLOAK_FRONTEND_URL: ${EXTERNAL_URL:-https://localhost}/auth
+
+      # Custom JVM options (increase heap size if required)
+      JAVA_OPTS: ${KEYCLOAK_JAVA_OPTS:--XX:CompressedClassSpaceSize=50m -XX:MaxMetaspaceSize=250m
+        -XX:InitialCodeCacheSize=50m -XX:ReservedCodeCacheSize=50m
+        -XX:MaxDirectMemorySize=25m
+        -XX:NativeMemoryTracking=summary
+        -XX:+ExitOnOutOfMemoryError
+        -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/javadump.core.hprof
+        -Djava.net.preferIPv4Stack=true -Djboss.modules.system.pkgs=org.jboss.byteman -Djava.awt.headless=true}
+
+
+  # PostgreSQL DBMS
+  postgresql:
+    image: openremote/postgresql:${POSTGRESQL_VERSION:-9.6.21.0}
+    restart: always
+    # Docker volume for persistent storage of DB; can alternatively map to host
+    volumes:
+      - temp-data:/tmp
+    #  - postgresql-data:/var/lib/postgresql/data
+    #ports:
+    #  - "5432:5432" # DB server
+    environment:
+
+      # It is important that all services have the same timezone and are time synchronized.
+      # Bearer tokens are only valid for minutes, and authentication fails if Keycloak drifts.
+      TZ: ${TZ:-Europe/Amsterdam}
+      PGTZ: ${PGTZ:-Europe/Amsterdam}
+
+      # Database settings
+      POSTGRES_DB: ${DB_NAME:-openremote}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+
+  # Map tile server
+  tileserver:
+    image: openremote/tileserver-gl:${TILESERVER_VERSION:-latest}
+    restart: always
+    #ports:
+      #- "8082:80" # Web server port

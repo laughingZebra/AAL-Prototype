@@ -1,0 +1,1 @@
+{"tokenEndpointUri":"http://keycloak:8080/auth/realms/master/protocol/openid-connect/token","client_id":"admin-cli","scope":"openid","username":"manager-keycloak","password":"53Ej2wDB9SCNpr84lSmz6l","basicAuthHeader":false,"grant_type":"password"}

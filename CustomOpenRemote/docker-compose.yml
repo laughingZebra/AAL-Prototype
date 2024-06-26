@@ -1,0 +1,60 @@
+# OpenRemote v3
+#
+# Profile that runs the vanilla stack on https://localhost using a self-signed SSL certificate,
+# with username 'admin' and password 'secret'. There is no map data available in the vanilla
+# system so the map tile server will not function. Persistent data is stored in a docker
+# volume called postgresql-data between restarts, simply delete this volume to reset the
+# system to an empty state.
+#
+# Please see profile/deploy.yml for configuration details for each service.
+#
+version: '2.4'
+
+services:
+
+   proxy:
+    image: openremote/proxy:${PROXY_VERSION:-2.1.2.4}
+    restart: always
+    depends_on:
+      manager:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8883:8883"
+
+   manager:
+    image: openremote/manager:${DATE_TAG:-latest}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./deployment:/deployment
+    environment:
+      MAP_TILESERVER_HOST: localhost
+      MAP_TILESERVER_PORT: ${MAP_TILESERVER_PORT:-8082}
+      MAP_TILESERVER_REQUEST_TIMEOUT: ${MAP_TILESERVER_REQUEST_TIMEOUT:-10000}
+
+   keycloak:
+    restart: always
+    image: openremote/keycloak:${KEYCLOAK_VERSION:-13.0.1.3}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_FRONTEND_URL: ${EXTERNAL_URL:-https://localhost}/auth
+      KEYCLOAK_PASSWORD: ${SETUP_ADMIN_PASSWORD:-secret}
+  
+   postgresql:
+    restart: always
+    image: openremote/postgresql:${POSTGRESQL_VERSION:-9.6.21.0}
+
+   map:
+    extends:
+      file: deploy.yml
+      service: tileserver
+    ports:
+      - "8082:80"
+    volumes:
+      - ./deployment:/deployment
+      - ./deployment/map:/data

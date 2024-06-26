@@ -1,0 +1,20 @@
+# OpenRemote v3
+#
+# Profile for running the map tile server on http://localhost:8082
+#
+# Please see deploy.yml for configuration details for each service.
+#
+version: '2.4'
+
+services:
+
+  map:
+    extends:
+      file: deploy.yml
+      service: tileserver
+    ports:
+      - "8088:80"
+    volumes:
+      - ./deployment:/deployment
+      - ./deployment/map:/data
+

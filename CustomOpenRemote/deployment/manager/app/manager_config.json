@@ -1,0 +1,11 @@
+{
+  "realms": {
+    "default": {
+      "appTitle": "Test",
+      "styles": ":host > * {--or-app-color2: #F9F9F9; --or-app-color3: #22211f; --or-app-color4: #aa99ff; --or-app-color5: #fbb117;}",
+	  "logo": "/images/logo.png",
+      "logoMobile": "/images/logo-mobile.png",
+      "favicon": "/images/favicon.png"
+    }
+  }
+}
